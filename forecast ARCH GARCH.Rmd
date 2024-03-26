@@ -1,0 +1,320 @@
+---
+title: "Kelompok 6 ADW"
+author: "M. Akbar, M. Fahrul, Kanaya, Dede"
+date: "2023-12-14"
+output: html_document
+---
+
+# Tugas Kelompok 6 ADW
+
+## Anggota Kelompok :
+
+-   **M. Akbar Resdika_121450066**
+
+-   **Kanaya Dea Thalita Akhmad_121450001**
+
+-   **Dede Masita_121450007**
+
+-   **Mohammad Fahrul Aditya_121450166**
+
+### Import Packages
+
+```{r}
+library(readxl)
+library(tseries)
+library(forecast)
+library(ggplot2)
+library(seasonal)
+library(fUnitRoots)
+library(urca)
+library(TSA)
+library(fGarch)
+library(vars)
+library(dplyr)
+library(FinTS)
+library(rugarch)
+```
+
+### Import Data
+
+```{r}
+kurs <- read_excel("E:/Kurs Transaksi USD-IDR (1).xlsx")
+```
+
+### Data Teratas
+
+```{r}
+head(kurs)
+```
+
+### Mengidentifikasi data time series
+
+```{r}
+kurs$Tanggal <- as.Date(kurs$Tanggal, format = "%m/%d/%Y %I:%M:%S %p")
+kurs
+
+```
+
+```{r}
+# Mengurutkan data berdasarkan kolom 'Tanggal' secara Ascending
+kurs <- arrange(kurs,Tanggal)
+
+# Menampilkan hasil
+print(kurs)
+
+```
+
+```{r}
+str(kurs)
+# Membuat objek deret waktu
+kurs_ts <- ts(kurs$`Kurs Jual`, start = start(kurs$Tanggal), frequency = 1)
+
+# Plot deret waktu
+ts.plot(kurs_ts, xlab = "Periode", ylab = "Kurs Jual", main = "Grafik Kurs Beli")
+```
+
+Grafik diatas merupakan data kurs beli yaitu penukaran uang usd ke rupiah, yang dimana data tersebut dimulai dari tanggal 4 januari 2021 - 29 desember 2023, dapat dilihat pada plot diatas bahwa konversi kurs beli sempat turun
+
+### Melakukan uji stasioneritas data menggunakan Augmented Dickey-Fuller Test (ADF)
+
+```{r}
+adf.test(kurs_ts)
+```
+
+Terlihat bahwa nilai p value \> dari 0.05 maka terima H0 yang artinya data belum stasioner dalam nilai tengah dan ragam, dan juga dapat kita lihat bahwa plot acf turun secara lambat atau tail off, sehingga perlu dilakukan differencing
+
+### Melakukan differencing & transformasi
+
+dilakukan differencing untuk menstasionerkan terhadap rataan
+
+```{r}
+diff_kurs_ts <- diff(log(kurs_ts))
+```
+
+### Mengidentifikasi data kembali setelah dilakukan differencing & transformasi
+
+```{r}
+ts.plot(diff_kurs_ts, main = "Grafik Kurs Beli")
+```
+
+### Mengidentifikasi komponen ARIMA menggunakan model ACF & PACF Setelah di differencing & transform)))
+
+```{r}
+acf(diff_kurs_ts)
+```
+
+```{r}
+pacf(diff_kurs_ts)
+```
+
+### Melakukan uji stasioneritas data menggunakan Augmented Dickey-Fuller Test (ADF) setelah di differencing
+
+```{r}
+adf.test(diff_kurs_ts)
+```
+
+Dapat dilihat bahwa nilai p-value \< 0,05 yang mengartikan bahwa data sudah stasioner
+
+### Estimasi Parameter
+
+
+```{r}
+eacf(diff_kurs_ts)
+```
+
+Berdasarkan plot diatas didapatkan bahwa kandidiat model ARIMA sebagai berikut :
+
+ARIMA(3,1,3)
+
+ARIMA(0,1,1)
+
+ARIMA(1,1,4)
+
+ARIMA(1,1,3)
+
+#### Model ARIMA
+
+```{r}
+model1 <- Arima(diff_kurs_ts,order = c(3,1,3),method ="ML")
+summary(model1)
+```
+
+```{r}
+model2 <- Arima(diff_kurs_ts,order = c(0,1,1),method ="ML")
+summary(model2)
+```
+
+```{r}
+model3 <- Arima(diff_kurs_ts,order = c(1,1,4),method ="ML")
+summary(model3)
+```
+
+```{r}
+model4 <- Arima(diff_kurs_ts,order = c(1,1,3),method ="ML")
+summary(model4)
+```
+
+```{r}
+Model <- c("ARIMA (3,1,3)","ARIMA (0,1,1)","ARIMA (1,1,4)", "ARIMA (1,1,3)")
+AIC <- c(model1$aic,model2$aic,model3$aic,model4$aic)
+BIC <- c(model1$bic,model2$bic,model3$bic, model4$bic)
+Akurasi <- data.frame(Model,AIC,BIC)
+kableExtra::kable(Akurasi)
+```
+
+
+```{r}
+paste("Model yang terbaik berdasarkan akurasi adalah model",Akurasi$Model[which.min(Akurasi[,"AIC"])])
+```
+
+### Uji Diagnostik
+
+#### Model ARIMA
+
+```{r}
+checkresiduals(model1)
+```
+
+#### Analisis residuals model tentatif arima(2,1,2)
+
+```{r}
+par(mar = c(4, 4, 2, 1))
+residual_model <- model1$residuals
+tsdiag(model1)
+```
+
+```{r}
+par(mar = c(4, 4, 2, 1))
+par(mfrow = c(2,2))
+qqnorm(residual_model)
+qqline(residual_model, col = "blue", lwd = 2)
+plot(residual_model, type="o", 
+     ylab = "Sisaan", xlab = "Order", main = "Residual vs Order")
+abline(h = 0, col='red')
+acf(residual_model)
+pacf(residual_model)
+```
+
+**Analisis**
+
+-   dapat dilihat pada grafik normal Q-Q Plot berdasarkan hasil plot diatas bahwa banyak amatan yang cenderung menjauhi garis lurus plot distribusi normal, sehingga dapat disimpulkan bahwa residual model belum cukup menyebar normal
+
+-   Dapat dilihat pada grafik residual vs order bahwa mayoritas plot residual bergerak di sekitar nol, tetapi terdapat beberapa amatan yang terletak jauh dari titik nol sehingga, belum dapat disimpulkan apakah terdapat autokorelasi atau tidak
+
+-   Pada plot lag pacf dan acf terdapat garis di lag tertentu yang melebihi tinggi garis biru, sehingga dapat dikatakan bahwa terdapat autokorelasi pada residual model
+
+#### Uji Formal
+
+#### a) residual model menyebar normal
+
+-   H0 : residual mengikuti sebaran normal
+
+-   H1 : residual tidak mengikuti sebaran normal
+
+```{r}
+jarque.bera.test(residual_model)
+```
+
+dapat dilihat bahwa nilai p-value \< $\alpha$(0.05), sehingga tolak H0, artinya cukup bukti untuk menyatakan bahwa residual tidak menyebar normal pada taraf signifikasi $\alpha$(0.05)
+
+#### B) residual model bebas/tidak ada autokorelasi
+
+-   H0 : Tidak ada autokorelasi
+
+-   H1 : Ada autokorelasi
+
+```{r}
+Box.test(residual_model, type = "Ljung") 
+```
+
+dapat dilihat bahwa nilai p-value \> $\alpha$(0.05), sehingga terima H0, artinya ada bukti untuk menyatakan bahwa tidak ada korelasi pada data pada taraf signifikasi $\alpha$(0.05)
+
+### **Identifikasi Efek ARCH**
+
+Identifikasi adanya proses ARCH pada sisaan model ARIMA(3,1,3) dapat dilakukan dengan uji *Lagrange Multiplier* (LM). Hipotesis yang digunakan adalah sebagai berikut:
+
+H0 : Tidak terjadi heteroskedastisitas
+
+H1 : Terjadi Heteroskedastisitas
+
+```{r}
+for (i in 1:15) {
+  ArchTest <- ArchTest(residual_model, lags=i, demean=TRUE)
+  cat("P Value LM Test lag ke", i,"adalah" , ArchTest$p.value, "\n") }
+
+```
+hasil uji diperoleh nilai P−Value sampai lag ke-15 yang didapat lebih kecil dari α = 5%, maka keputusan yang diambil adalah Tolak H0. Dengan kata lain, dapat disimpulkan bahwa terdapat unsur heteroskedastisitas pada sisaan model ARIMA(3,1,3). Kondisi yang menolak H0 ini terjadi sampai dengan lag ke-15 sehingga dapat dikatakan bahwa indikasi pemodelan sisaan ini lebih cocok menggunakan model GARCH dibandingkan model ARCH.
+
+
+### **Pemodelan GARCH**
+
+```{r}
+#alpha1 unsur ARCH 1 nya di lag residual kuadrat
+#LM Archtestnya p value siginifikan, yg mau kita tuju adalah tidak signfikan, terdapat efek masih
+garch10<-garchFit(~arma(3,3)+garch(1,0),data = diff_kurs_ts, trace = F)
+a <- summary(garch10)
+a
+```
+
+```{r}
+#beta 1 garch atau lag variansnya sendiri
+garch11<-garchFit(~arma(3,3)+garch(1,1),data = diff_kurs_ts, trace = F)
+b <- summary(garch11)
+b
+```
+
+```{r}
+garch37<-garchFit(~arma(3,3)+garch(3,7),data = diff_kurs_ts, trace = F)
+c <- summary(garch37)
+c
+```
+
+```{r}
+#beta 1 garch atau lag variansnya sendiri
+garch21<-garchFit(~arma(3,3)+garch(2,1),data = diff_kurs_ts, trace = F)
+d <- summary(garch21)
+d
+```
+
+Dibandingkan nilai aic dari keempat model untuk mencari pasangan armagarch yaitu :
+
+model 1 = Arma(3,3) ~ Garch(1,0) -> AIC(-8.785)
+model 2 = Arma(3,3) ~ Garch(1,1) -> AIC(-8.853)
+model 3 = Arma(3,3) ~ Garch(3,7) -> AIC(-8.860)
+model 4 = Arma(3,3) ~ Garch(2,1) -> AIC(-8.842)
+
+Sehingga pemodelan pasangan armagarch terbaik pada arma(3,1,3) dan garch(3,7)
+
+### Peramalan
+
+```{r}
+# Peramalan
+garchSpec <- ugarchspec(
+  variance.model=list(model="sGARCH",
+                      garchOrder=c(3,7)),
+  mean.model=list(armaOrder=c(3,3)),
+  distribution.model="std")
+garchFitt <- ugarchfit(spec=garchSpec, data=diff_kurs_ts)
+
+```
+
+
+```{r}
+forc<- ugarchforecast(fitORspec = garchFitt, data = kurs$`Kurs Jual`, n.ahead = 30, n.roll = 0)
+plot(forc, which= 1)
+```
+
+
+```{r}
+pt_1 <- kurs$`Kurs Jual`[650] #nilai akhir data latih
+hasil.forc.Diff <- forc@forecast$seriesFor[,1]
+hasil <- diffinv(hasil.forc.Diff, differences = 1) + pt_1
+
+# Pastikan panjang kedua vektor sama
+panjang_minimal <- min(length(kurs_ts), length(hasil))
+
+# Buat data frame perbandingan dengan panjang minimal
+perbandingan <- data.frame("Aktual" = kurs_ts[1:panjang_minimal], "Ramalan" = hasil[1:panjang_minimal])
+head(perbandingan, 10)
+```
+
